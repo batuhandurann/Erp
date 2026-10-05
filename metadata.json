@@ -1,0 +1,6 @@
+{
+  "name": "ProQuote ERP - Teklif, Sözleşme & Ürün Takip Sistemi",
+  "description": "Müşteri tekliflerinden proforma fatura, satış sözleşmesi ve otomatik ürün/seri numarası yaşam döngüsü takibine kadar uçtan uca kurumsal satış yönetim platformu.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

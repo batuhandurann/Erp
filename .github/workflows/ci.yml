@@ -1,0 +1,58 @@
+name: BusinessFlow CI Pipeline
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  validate:
+    name: Build, Lint & Test Verification
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgrespassword
+          POSTGRES_DB: businessflow_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Source Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Typecheck TypeScript
+        run: npm run typecheck
+
+      - name: Lint Codebase
+        run: npm run lint
+
+      - name: Run All Tests (Unit & Integration)
+        run: npm run test
+        env:
+          DATABASE_URL: postgresql://postgres:postgrespassword@localhost:5432/businessflow_test?schema=public
+          JWT_SECRET: test-secret-key-minimum-32-characters-for-ci
+
+      - name: Build Production Assets
+        run: npm run build
+
+      - name: Verify Docker Container Build
+        run: docker build -t businessflow-erp:ci .

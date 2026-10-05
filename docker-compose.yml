@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: businessflow-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+      POSTGRES_DB: businessflow_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d businessflow_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: businessflow-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://postgres:postgrespassword@postgres:5432/businessflow_db?schema=public
+      JWT_SECRET: super-secret-jwt-key-for-businessflow-production-min-32-chars
+      JWT_REFRESH_SECRET: super-secret-jwt-refresh-key-for-businessflow-production-min-32-chars
+      DEFAULT_TENANT_ID: org-apex-01
+    ports:
+      - "3000:3000"
+
+volumes:
+  postgres_data:
+    driver: local

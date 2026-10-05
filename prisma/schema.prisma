@@ -1,0 +1,518 @@
+// BusinessFlow Enterprise ERP/CRM Prisma Schema
+// Database target: PostgreSQL
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  SALES
+  FINANCE
+  OPERATIONS
+  VIEWER
+}
+
+enum QuoteStatus {
+  DRAFT
+  SENT
+  VIEWED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+  CANCELLED
+  CONVERTED
+}
+
+enum ProformaPaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum ContractStatus {
+  DRAFT
+  PENDING_SIGNATURE
+  SIGNED
+  ACTIVE
+  COMPLETED
+  CANCELLED
+}
+
+enum SaleDeliveryStatus {
+  PENDING
+  PREPARING
+  SHIPPED
+  DELIVERED
+}
+
+enum SalePaymentStatus {
+  UNPAID
+  PARTIAL
+  PAID
+}
+
+enum ProductLifecycleStatus {
+  STOCK
+  RESERVED
+  SOLD
+  DELIVERED
+  ACTIVE
+  SERVICE
+  RETURNED
+}
+
+enum PaymentMethod {
+  CASH
+  BANK_TRANSFER
+  CREDIT_CARD
+  CHECK
+  OTHER
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  code      String   @unique // e.g. org-apex-01
+  name      String
+  domain    String?
+  plan      String   @default("ENTERPRISE")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users     User[]
+  customers Customer[]
+}
+
+model User {
+  id               String      @id @default(uuid())
+  tenantId         String      @default("org-apex-01")
+  tenant           Tenant?     @relation(fields: [tenantId], references: [code])
+  email            String      @unique
+  passwordHash     String
+  refreshTokenHash String?
+  name             String
+  title            String
+  department       String
+  role             UserRole    @default(SALES)
+  isActive         Boolean     @default(true)
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  quotes           Quote[]
+  sales            Sale[]
+  auditLogs        AuditLog[]
+
+  @@index([tenantId])
+  @@index([email])
+}
+
+model Customer {
+  id             String            @id @default(uuid())
+  tenantId       String            @default("org-apex-01")
+  tenant         Tenant?           @relation(fields: [tenantId], references: [code])
+  code           String            @unique // e.g. CST-2026-0001
+  name           String
+  taxNumber      String
+  taxOffice      String
+  industry       String?
+  creditLimit    Decimal?          @db.Decimal(12, 2)
+  notes          String?
+  isArchived     Boolean           @default(false)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  contacts       CustomerContact[]
+  addresses      CustomerAddress[]
+  quotes         Quote[]
+  proformas      Proforma[]
+  contracts      Contract[]
+  sales          Sale[]
+  productSerials ProductSerial[]
+  payments       Payment[]
+
+  @@index([tenantId])
+  @@index([code])
+}
+
+model CustomerContact {
+  id         String    @id @default(uuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  name       String
+  title      String
+  email      String
+  phone      String
+  isPrimary  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+}
+
+model CustomerAddress {
+  id         String    @id @default(uuid())
+  customerId String
+  customer   Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  title      String    // e.g. "Merkez Ofis", "Depo", "Fabrika"
+  address    String
+  city       String
+  country    String    @default("Türkiye")
+  isPrimary  Boolean   @default(false)
+  createdAt  DateTime  @default(now())
+}
+
+model Product {
+  id             String          @id @default(uuid())
+  tenantId       String          @default("org-apex-01")
+  sku            String          @unique // e.g. SRV-DL-R760
+  name           String
+  category       String
+  brand          String
+  model          String
+  description    String?
+  unitPrice      Decimal         @db.Decimal(12, 2)
+  currency       String          @default("TRY")
+  taxRate        Decimal         @default(20) @db.Decimal(5, 2)
+  stockQuantity  Int             @default(0)
+  warrantyMonths Int             @default(24)
+  isArchived     Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  serials        ProductSerial[]
+  quoteItems     QuoteItem[]
+
+  @@index([tenantId])
+  @@index([sku])
+}
+
+model Quote {
+  id                    String       @id @default(uuid())
+  tenantId              String       @default("org-apex-01")
+  quoteNumber           String       @unique // e.g. TKL-2026-000124
+  customerId            String
+  customer              Customer     @relation(fields: [customerId], references: [id])
+  customerName          String
+  salesPersonId         String
+  salesPerson           User         @relation(fields: [salesPersonId], references: [id])
+  date                  DateTime     @default(now())
+  validUntil            DateTime
+  currency              String       @default("TRY")
+  paymentTerms          String
+  deliveryTerms         String
+  subtotal              Decimal      @db.Decimal(12, 2)
+  discountTotal         Decimal      @db.Decimal(12, 2)
+  taxTotal              Decimal      @db.Decimal(12, 2)
+  grandTotal            Decimal      @db.Decimal(12, 2)
+  status                QuoteStatus  @default(DRAFT)
+  revision              Int          @default(1)
+  notes                 String?
+  convertedToProformaId String?      @unique
+  convertedToContractId String?      @unique
+  createdAt             DateTime     @default(now())
+  updatedAt             DateTime     @updatedAt
+
+  items                 QuoteItem[]
+  proforma              Proforma?
+  contract              Contract?
+
+  @@index([tenantId])
+  @@index([customerId])
+  @@index([quoteNumber])
+}
+
+model QuoteItem {
+  id             String    @id @default(uuid())
+  quoteId        String
+  quote          Quote     @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product   @relation(fields: [productId], references: [id])
+  productSku     String
+  productName    String
+  quantity       Int
+  unitPrice      Decimal   @db.Decimal(12, 2)
+  discountRate   Decimal   @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal   @default(0) @db.Decimal(12, 2)
+  taxRate        Decimal   @default(20) @db.Decimal(5, 2)
+  taxAmount      Decimal   @db.Decimal(12, 2)
+  netAmount      Decimal   @db.Decimal(12, 2)
+  total          Decimal   @db.Decimal(12, 2)
+}
+
+model Proforma {
+  id              String                @id @default(uuid())
+  tenantId        String                @default("org-apex-01")
+  proformaNumber  String                @unique // e.g. PRO-2026-000087
+  quoteId         String?               @unique
+  quote           Quote?                @relation(fields: [quoteId], references: [id])
+  customerId      String
+  customer        Customer              @relation(fields: [customerId], references: [id])
+  customerName    String
+  date            DateTime              @default(now())
+  dueDate         DateTime
+  currency        String                @default("TRY")
+  paymentTerms    String
+  deliveryTerms   String
+  subtotal        Decimal               @db.Decimal(12, 2)
+  discountTotal   Decimal               @db.Decimal(12, 2)
+  taxTotal        Decimal               @db.Decimal(12, 2)
+  grandTotal      Decimal               @db.Decimal(12, 2)
+  paidAmount      Decimal               @default(0) @db.Decimal(12, 2)
+  remainingAmount Decimal               @db.Decimal(12, 2)
+  paymentStatus   ProformaPaymentStatus @default(UNPAID)
+  notes           String?
+  createdAt       DateTime              @default(now())
+  updatedAt       DateTime              @updatedAt
+
+  items           ProformaItem[]
+  contract        Contract?
+  payments        Payment[]
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model ProformaItem {
+  id             String    @id @default(uuid())
+  proformaId     String
+  proforma       Proforma  @relation(fields: [proformaId], references: [id], onDelete: Cascade)
+  productId      String
+  productSku     String
+  productName    String
+  quantity       Int
+  unitPrice      Decimal   @db.Decimal(12, 2)
+  discountRate   Decimal   @default(0) @db.Decimal(5, 2)
+  discountAmount Decimal   @default(0) @db.Decimal(12, 2)
+  taxRate        Decimal   @default(20) @db.Decimal(5, 2)
+  taxAmount      Decimal   @db.Decimal(12, 2)
+  total          Decimal   @db.Decimal(12, 2)
+}
+
+model Contract {
+  id                     String         @id @default(uuid())
+  tenantId               String         @default("org-apex-01")
+  contractNumber         String         @unique // e.g. SOZ-2026-000043
+  quoteId                String?        @unique
+  quote                  Quote?         @relation(fields: [quoteId], references: [id])
+  proformaId             String?        @unique
+  proforma               Proforma?      @relation(fields: [proformaId], references: [id])
+  customerId             String
+  customer               Customer       @relation(fields: [customerId], references: [id])
+  customerName           String
+  customerRepresentative String
+  customerTitle          String
+  sellerName             String
+  sellerRepresentative   String
+  sellerTitle            String
+  contractDate           DateTime       @default(now())
+  deliveryDate           DateTime
+  warrantyTerms          String
+  paymentTerms           String
+  deliveryTerms          String
+  specialClauses         String[]
+  grandTotal             Decimal        @db.Decimal(12, 2)
+  currency               String         @default("TRY")
+  status                 ContractStatus @default(DRAFT)
+  signedDate             DateTime?
+  notes                  String?
+  createdAt              DateTime       @default(now())
+  updatedAt              DateTime       @updatedAt
+
+  sale                   Sale?
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model Sale {
+  id             String             @id @default(uuid())
+  tenantId       String             @default("org-apex-01")
+  saleNumber     String             @unique // e.g. SAT-2026-000081
+  contractId     String?            @unique
+  contract       Contract?          @relation(fields: [contractId], references: [id])
+  customerId     String
+  customer       Customer           @relation(fields: [customerId], references: [id])
+  customerName   String
+  salesPersonId  String?
+  salesPerson    User?              @relation(fields: [salesPersonId], references: [id])
+  date           DateTime           @default(now())
+  invoiceNumber  String             @unique // e.g. FAT-2026-00341
+  grandTotal     Decimal            @db.Decimal(12, 2)
+  currency       String             @default("TRY")
+  paidAmount     Decimal            @default(0) @db.Decimal(12, 2)
+  paymentStatus  SalePaymentStatus  @default(UNPAID)
+  deliveryStatus SaleDeliveryStatus @default(PENDING)
+  notes          String?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  items          SaleItem[]
+  productSerials ProductSerial[]
+  payments       Payment[]
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model SaleItem {
+  id          String   @id @default(uuid())
+  saleId      String
+  sale        Sale     @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  productId   String
+  productSku  String
+  productName String
+  quantity    Int
+  unitPrice   Decimal  @db.Decimal(12, 2)
+  taxRate     Decimal  @db.Decimal(5, 2)
+  total       Decimal  @db.Decimal(12, 2)
+}
+
+model ProductSerial {
+  id                String                 @id @default(uuid())
+  tenantId          String                 @default("org-apex-01")
+  internalId        String                 @unique // e.g. PRD-2026-000452
+  serialNumber      String                 // Manufacturer serial e.g. SN-X92-829193
+  productId         String
+  product           Product                @relation(fields: [productId], references: [id])
+  productName       String
+  category          String
+  brand             String
+  model             String
+  customerId        String?
+  customer          Customer?              @relation(fields: [customerId], references: [id])
+  customerName      String?
+  saleId            String?
+  sale              Sale?                  @relation(fields: [saleId], references: [id])
+  saleNumber        String?
+  status            ProductLifecycleStatus @default(STOCK)
+  location          String?                @default("Merkez Depo")
+  deliveryDate      DateTime?
+  warrantyStartDate DateTime?
+  warrantyEndDate   DateTime?
+  notes             String?
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+
+  movements         ProductMovement[]
+  serviceRecords    ServiceRecord[]
+
+  @@index([tenantId])
+  @@index([productId])
+  @@index([customerId])
+  @@index([internalId])
+}
+
+model ProductMovement {
+  id              String                 @id @default(uuid())
+  productSerialId String
+  productSerial   ProductSerial          @relation(fields: [productSerialId], references: [id], onDelete: Cascade)
+  fromStatus      ProductLifecycleStatus?
+  toStatus        ProductLifecycleStatus
+  action          String
+  performedBy     String
+  note            String?
+  timestamp       DateTime               @default(now())
+}
+
+model ServiceRecord {
+  id               String        @id @default(uuid())
+  productSerialId  String
+  productSerial    ProductSerial @relation(fields: [productSerialId], references: [id], onDelete: Cascade)
+  date             DateTime      @default(now())
+  type             String        // ARIZA, BAKIM, PARCA_DEGISIMI, YAZILIM
+  issueDescription String
+  resolution       String?
+  technician       String
+  cost             Decimal?      @default(0) @db.Decimal(10, 2)
+  status           String        @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED
+  resolvedDate     DateTime?
+  createdAt        DateTime      @default(now())
+}
+
+model Payment {
+  id            String        @id @default(uuid())
+  tenantId      String        @default("org-apex-01")
+  paymentNumber String        @unique // e.g. OD-2026-000101
+  customerId    String
+  customer      Customer      @relation(fields: [customerId], references: [id])
+  customerName  String
+  proformaId    String?
+  proforma      Proforma?     @relation(fields: [proformaId], references: [id])
+  saleId        String?
+  sale          Sale?         @relation(fields: [saleId], references: [id])
+  amount        Decimal       @db.Decimal(12, 2)
+  currency      String        @default("TRY")
+  paymentDate   DateTime      @default(now())
+  paymentMethod PaymentMethod @default(BANK_TRANSFER)
+  referenceNo   String
+  recordedBy    String
+  notes         String?
+  createdAt     DateTime      @default(now())
+
+  @@index([tenantId])
+  @@index([customerId])
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  tenantId   String   @default("org-apex-01")
+  timestamp  DateTime @default(now())
+  userId     String?
+  user       User?    @relation(fields: [userId], references: [id])
+  userName   String
+  userRole   String
+  entityType String   // QUOTE, PROFORMA, CONTRACT, SALE, PRODUCT, CUSTOMER, SERIAL, PAYMENT, SETTINGS
+  entityId   String
+  entityCode String
+  action     String
+  oldValue   String?
+  newValue   String?
+  details    String
+  ip         String?
+  userAgent  String?
+
+  @@index([tenantId])
+  @@index([entityId])
+  @@index([timestamp])
+}
+
+model NumberSequence {
+  id          String   @id @default(uuid())
+  tenantId    String   @default("org-apex-01")
+  year        Int      @default(2026)
+  quoteSeq    Int      @default(100)
+  proformaSeq Int      @default(50)
+  contractSeq Int      @default(30)
+  saleSeq     Int      @default(40)
+  productSeq  Int      @default(400)
+  customerSeq Int      @default(10)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, year])
+  @@index([tenantId])
+}
+
+model CompanySettings {
+  id                  String   @id @default(uuid())
+  tenantId            String   @unique @default("org-apex-01")
+  companyName         String
+  commercialTitle     String
+  taxNumber           String
+  taxOffice           String
+  address             String
+  phone               String
+  email               String
+  website             String
+  bankName            String
+  branch              String
+  accountHolder       String
+  iban                String
+  swift               String
+  authorizedSignatory String
+  signatoryTitle      String
+  updatedAt           DateTime @updatedAt
+}
